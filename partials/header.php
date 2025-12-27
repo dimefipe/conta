@@ -4,6 +4,24 @@ require_login();
 
 $f = flash_get();
 $u = current_user();
+
+$current = basename($_SERVER['SCRIPT_NAME'] ?? '');
+
+// Mapea páginas “hijas” al ítem del menú que deben marcar
+$activeKey = match (true) {
+  in_array($current, ['index.php'], true) => 'dashboard',
+  in_array($current, ['accounts.php'], true) => 'accounts',
+  in_array($current, ['entries.php','entry_new.php','entry_view.php','entry_void.php'], true) => 'entries',
+  in_array($current, ['ledger.php'], true) => 'ledger',
+  in_array($current, ['reports_is.php'], true) => 'is',
+  in_array($current, ['reports_bs.php'], true) => 'bs',
+  default => '',
+};
+
+function nav_item(string $href, string $label, string $key, string $activeKey): string {
+  $cls = ($key === $activeKey) ? 'active' : '';
+  return '<a class="'.$cls.'" href="'.$href.'">'.h($label).'</a>';
+}
 ?>
 <!doctype html>
 <html lang="es">
@@ -16,9 +34,11 @@ $u = current_user();
 <body>
 
   <div class="topbar">
-    <div class="container topbar-inner">
-      <button class="burger" id="burgerBtn" aria-label="Abrir menú">☰</button>
-      <div class="brand">Contabilidad MVP</div>
+    <div class="topbar-inner">
+      <div class="top-left">
+        <button class="burger" id="burgerBtn" aria-label="Abrir menú">☰</button>
+        <div class="brand">Contabilidad MVP</div>
+      </div>
 
       <div class="top-actions">
         <?php if ($u): ?>
@@ -36,17 +56,17 @@ $u = current_user();
       <div class="brand">Menú</div>
       <button class="btn secondary" id="closeSidebar" type="button">Cerrar</button>
     </div>
+
     <nav class="side-nav">
-      <a href="index.php">Dashboard</a>
-      <a href="accounts.php">Plan de cuentas</a>
-      <a href="entries.php">Libro diario</a>
-      <a href="ledger.php">Libro mayor</a>
-      <a href="reports_is.php">EE.RR.</a>
-      <a href="reports_bs.php">Balance</a>
+      <?= nav_item('index.php', 'Dashboard', 'dashboard', $activeKey) ?>
+      <?= nav_item('accounts.php', 'Plan de cuentas', 'accounts', $activeKey) ?>
+      <?= nav_item('entries.php', 'Libro diario', 'entries', $activeKey) ?>
+      <?= nav_item('ledger.php', 'Libro mayor', 'ledger', $activeKey) ?>
+      <?= nav_item('reports_is.php', 'EE.RR.', 'is', $activeKey) ?>
+      <?= nav_item('reports_bs.php', 'Balance', 'bs', $activeKey) ?>
     </nav>
   </aside>
 
-  <!-- IMPORTANTE: wrapper para que en escritorio el contenido quede al costado -->
   <div class="main-wrap">
     <div class="container">
       <?php if ($f): ?>

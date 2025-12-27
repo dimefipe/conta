@@ -5,30 +5,23 @@ require_login();
 
 $pdo = db();
 
-// Cuentas activas
 $accounts = $pdo->query("SELECT id,code,name FROM accounts WHERE is_active=1 ORDER BY code")->fetchAll();
 
 $accountId = (int)($_GET['account_id'] ?? 0);
 $shortcut = $_GET['p'] ?? '';
 $ym = $_GET['ym'] ?? '';
 
-/**
- * Fechas:
- * - ym=YYYY-MM (prioridad)
- * - p=week|month
- * - from/to manual
- */
 if ($ym && preg_match('/^\d{4}-\d{2}$/', $ym)) {
   $from = $ym . '-01';
   $to = date('Y-m-t', strtotime($from));
 } elseif (in_array($shortcut, ['week','month'], true)) {
-  [$from, $to] = date_range_from_shortcut($shortcut);
+  [$from,$to] = date_range_from_shortcut($shortcut);
 } else {
   $from = $_GET['from'] ?? date('Y-m-01');
   $to   = $_GET['to']   ?? date('Y-m-t');
 }
 
-// UI helpers Mes/Año
+// UI Mes/Año
 $years = range((int)date('Y') - 3, (int)date('Y') + 1);
 $months = [
   '01'=>'Enero','02'=>'Febrero','03'=>'Marzo','04'=>'Abril','05'=>'Mayo','06'=>'Junio',
@@ -41,13 +34,11 @@ $acc = null;
 $saldoInicial = 0;
 
 if ($accountId > 0) {
-  // Cuenta seleccionada
   $accSt = $pdo->prepare("SELECT * FROM accounts WHERE id=?");
   $accSt->execute([$accountId]);
   $acc = $accSt->fetch();
 
   if ($acc) {
-    // Saldo inicial: todo lo anterior a $from
     $si = $pdo->prepare("
       SELECT COALESCE(SUM(l.debit - l.credit),0) v
       FROM journal_lines l
@@ -59,7 +50,6 @@ if ($accountId > 0) {
     $si->execute([$accountId, $from]);
     $saldoInicial = (float)$si->fetch()['v'];
 
-    // Movimientos dentro del rango
     $st = $pdo->prepare("
       SELECT
         e.id AS entry_id,
@@ -101,13 +91,12 @@ require __DIR__ . '/partials/header.php';
         </select>
       </div>
 
-      <!-- Mes/Año rápido -->
       <div class="field">
         <label>Mes/Año rápido</label>
         <select name="ym" onchange="this.form.submit()">
           <option value="">— Elegir —</option>
           <?php foreach ($years as $y): ?>
-            <?php foreach ($months as $m => $label): $val = $y . '-' . $m; ?>
+            <?php foreach ($months as $m=>$label): $val=$y.'-'.$m; ?>
               <option value="<?= h($val) ?>" <?= ($currentYM === $val) ? 'selected' : '' ?>>
                 <?= h($label) ?> <?= h((string)$y) ?>
               </option>
@@ -117,7 +106,6 @@ require __DIR__ . '/partials/header.php';
         <div class="small">Filtra 01 → último día del mes.</div>
       </div>
 
-      <!-- Filtro manual -->
       <div class="field">
         <label>Desde</label>
         <input type="date" name="from" value="<?= h($from) ?>">
@@ -132,7 +120,6 @@ require __DIR__ . '/partials/header.php';
         <button class="btn" type="submit">Ver</button>
       </div>
 
-      <!-- Atajos -->
       <div class="field" style="align-self:flex-end">
         <a class="btn secondary" href="ledger.php?account_id=<?= (int)$accountId ?>&p=week">Esta semana</a>
       </div>
@@ -152,7 +139,7 @@ require __DIR__ . '/partials/header.php';
     <div class="small">
       Cuenta: <b><?= h($acc['code']) ?> — <?= h($acc['name']) ?></b><br>
       Periodo: <b><?= h($from) ?></b> a <b><?= h($to) ?></b><br>
-      Saldo inicial (antes del periodo): <b>$<?= number_format($saldoInicial, 2, ',', '.') ?></b>
+      Saldo inicial (antes del periodo): <b><?= clp($saldoInicial) ?></b>
     </div>
 
     <table class="table" style="margin-top:10px">
@@ -168,13 +155,10 @@ require __DIR__ . '/partials/header.php';
         </tr>
       </thead>
       <tbody>
-        <?php
-          $saldo = $saldoInicial;
-          if (!$movs):
-        ?>
-          <tr>
-            <td colspan="7" class="small">No hay movimientos en este periodo.</td>
-          </tr>
+        <?php $saldo = $saldoInicial; ?>
+
+        <?php if (!$movs): ?>
+          <tr><td colspan="7" class="small">No hay movimientos en este periodo.</td></tr>
         <?php else: ?>
           <?php foreach ($movs as $m): ?>
             <?php $saldo += ((float)$m['debit'] - (float)$m['credit']); ?>
@@ -183,16 +167,15 @@ require __DIR__ . '/partials/header.php';
               <td><a href="entry_view.php?id=<?= (int)$m['entry_id'] ?>">#<?= (int)$m['entry_id'] ?></a></td>
               <td><?= h($m['description']) ?></td>
               <td><?= h($m['memo'] ?? '') ?></td>
-              <td class="right">$<?= number_format((float)$m['debit'], 2, ',', '.') ?></td>
-              <td class="right">$<?= number_format((float)$m['credit'], 2, ',', '.') ?></td>
-              <td class="right">$<?= number_format($saldo, 2, ',', '.') ?></td>
+              <td class="right"><?= clp($m['debit']) ?></td>
+              <td class="right"><?= clp($m['credit']) ?></td>
+              <td class="right"><?= clp($saldo) ?></td>
             </tr>
           <?php endforeach; ?>
         <?php endif; ?>
       </tbody>
     </table>
   <?php endif; ?>
-
 </div>
 
 <?php require __DIR__ . '/partials/footer.php'; ?>

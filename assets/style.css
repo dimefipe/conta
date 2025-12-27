@@ -144,3 +144,54 @@ hr { border:0; border-top:1px solid #eef1f5; margin:14px 0; }
 @media (max-width: 1023.98px) {
   .main-wrap { margin-left: 0; }
 }
+
+/* Topbar fija (no se pierde al scroll) */
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  z-index: 100;
+  background: #0b0b0b;
+}
+
+/* Esta barra ahora ocupa el ancho completo, no centrada por .container */
+.topbar-inner{
+  width: 100%;
+  padding: 0 18px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between; /* <- esto es lo que querías */
+  gap: 12px;
+}
+
+.top-left{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+}
+
+body{
+  padding-top: 60px; /* evita que el contenido quede debajo de la topbar */
+}
+
+/* Sidebar desde debajo de la topbar */
+.sidebar{
+  top: 60px;
+  height: calc(100vh - 60px);
+}
+
+/* overlay parte bajo topbar */
+.overlay{
+  inset: 60px 0 0 0;
+}
+
+.muted { color:#cfcfcf; }
+
+
+.side-nav a.active{
+  border-color: #111;
+  background: #e9eef5;
+  font-weight: 700;
+}

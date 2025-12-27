@@ -72,3 +72,8 @@ function login_user(int $id, string $email, string $name): void {
 function logout_user(): void {
   unset($_SESSION['user']);
 }
+
+
+function clp($n): string {
+  return '$' . number_format((float)$n, 0, ',', '.');
+}
