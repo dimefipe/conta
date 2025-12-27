@@ -61,3 +61,86 @@ hr { border:0; border-top:1px solid #eef1f5; margin:14px 0; }
 .overlay.open { opacity:1; pointer-events:auto; }
 
 /* En desktop puedes igual usar sidebar (queda oculto por defecto). */
+
+/* Ajusta altura fija topbar para calcular sidebar */
+.topbar { height:60px; display:flex; align-items:center; }
+.topbar-inner { display:flex; align-items:center; justify-content:space-between; gap:12px; height:60px; }
+
+.top-actions { display:flex; align-items:center; gap:10px; }
+.muted { color:#cfcfcf; }
+
+/* Sidebar base */
+.sidebar {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  height: calc(100vh - 60px);
+  width: 280px;
+  background:#fff;
+  border-right:1px solid #e6e8ee;
+  transform: translateX(-100%);
+  transition: transform .2s ease;
+  z-index: 50;
+  padding: 14px;
+}
+.sidebar.open { transform: translateX(0); }
+
+.overlay {
+  position: fixed;
+  inset: 60px 0 0 0; /* parte bajo la topbar */
+  background: rgba(0,0,0,.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+  z-index: 40;
+}
+.overlay.open { opacity:1; pointer-events:auto; }
+
+/* Burger base (mobile) */
+.burger {
+  border:1px solid #333;
+  background:#111;
+  color:#fff;
+  border-radius:10px;
+  padding:8px 10px;
+  cursor:pointer;
+  font-size:16px;
+}
+
+/* Contenedor principal */
+.main-wrap { margin-left: 0; }
+
+/* Links sidebar */
+.sidebar-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.side-nav { display:flex; flex-direction:column; gap:8px; }
+.side-nav a {
+  padding:10px 12px;
+  border-radius:10px;
+  text-decoration:none;
+  color:#111;
+  border:1px solid #eef1f5;
+  background:#f9fafb;
+}
+.side-nav a:hover { background:#eef1f5; }
+
+/* ======= DESKTOP (>=1024px): sidebar visible fijo y el main empujado ======= */
+@media (min-width: 1024px) {
+  .burger { display:none; }
+  .overlay { display:none !important; }
+
+  .sidebar {
+    transform: translateX(0);   /* siempre visible */
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  #closeSidebar { display:none; } /* botón cerrar no tiene sentido en desktop */
+
+  .main-wrap {
+    margin-left: 280px; /* empuja el contenido */
+  }
+}
+
+/* ======= MOBILE (<1024px): sidebar por encima (toggle) ======= */
+@media (max-width: 1023.98px) {
+  .main-wrap { margin-left: 0; }
+}

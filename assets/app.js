@@ -18,7 +18,16 @@
   burger.addEventListener('click', open);
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', close);
+
+  // Si se pasa a desktop, asegura que overlay se apague
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 1024) {
+      overlay.classList.remove('open');
+      sidebar.classList.remove('open'); // en desktop ya está visible por CSS
+    }
+  });
 })();
+
 
 
 

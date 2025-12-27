@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../lib/helpers.php';
 require_login();
+
 $f = flash_get();
 $u = current_user();
 ?>
@@ -29,6 +30,7 @@ $u = current_user();
   </div>
 
   <div class="overlay" id="overlay"></div>
+
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <div class="brand">Menú</div>
@@ -44,7 +46,9 @@ $u = current_user();
     </nav>
   </aside>
 
-  <div class="container">
-    <?php if ($f): ?>
-      <div class="flash <?= h($f['type']) ?>"><?= h($f['msg']) ?></div>
-    <?php endif; ?>
+  <!-- IMPORTANTE: wrapper para que en escritorio el contenido quede al costado -->
+  <div class="main-wrap">
+    <div class="container">
+      <?php if ($f): ?>
+        <div class="flash <?= h($f['type']) ?>"><?= h($f['msg']) ?></div>
+      <?php endif; ?>
