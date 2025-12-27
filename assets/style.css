@@ -1,0 +1,29 @@
+:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+body { margin:0; background:#f6f7f9; color:#111; }
+.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.topbar { background:#111; color:#fff; }
+.topbar .container { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.brand { font-weight:700; letter-spacing:.2px; }
+.nav a { color:#ddd; text-decoration:none; margin-left:12px; font-size:14px; }
+.nav a:hover { color:#fff; }
+
+.card { background:#fff; border:1px solid #e6e8ee; border-radius:10px; padding:14px; margin: 14px 0; }
+.row { display:flex; gap:12px; flex-wrap:wrap; }
+.field { display:flex; flex-direction:column; gap:6px; min-width: 220px; }
+label { font-size:12px; color:#444; }
+input, select, textarea { padding:10px; border:1px solid #d8dde6; border-radius:10px; font-size:14px; background:#fff; }
+textarea { min-height: 70px; }
+.btn { display:inline-block; padding:10px 12px; border-radius:10px; border:1px solid #111; background:#111; color:#fff; text-decoration:none; cursor:pointer; font-size:14px; }
+.btn.secondary { background:#fff; color:#111; }
+.btn.danger { border-color:#c11; background:#c11; }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { border-bottom:1px solid #eef1f5; text-align:left; padding:10px; font-size:14px; }
+.table th { font-size:12px; color:#444; text-transform:uppercase; letter-spacing:.04em; }
+.small { font-size:12px; color:#555; }
+.right { text-align:right; }
+.flash { padding:10px 12px; border-radius:10px; margin:12px 0; }
+.flash.ok { background:#e9fbef; border:1px solid #bde8c8; }
+.flash.err { background:#ffecec; border:1px solid #ffb7b7; }
+.kpi { flex:1; min-width:220px; }
+.kpi .v { font-size:22px; font-weight:700; }
+hr { border:0; border-top:1px solid #eef1f5; margin:14px 0; }
