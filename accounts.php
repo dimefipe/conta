@@ -1,10 +1,23 @@
 <?php
-require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
+
 require_login();
 require_company_selected();
 
 $pdo = db();
+$cid = current_company_id();
+
+$TYPES = ['ASSET','LIABILITY','EQUITY','INCOME','COST','EXPENSE'];
+
+/**
+ * Helper: obtener cuenta SOLO si pertenece a la empresa activa
+ */
+function get_account_in_company(PDO $pdo, int $id, int $cid): ?array {
+  $st = $pdo->prepare("SELECT * FROM accounts WHERE id=? AND company_id=? LIMIT 1");
+  $st->execute([$id, $cid]);
+  $r = $st->fetch();
+  return $r ?: null;
+}
 
 /**
  * CREATE
@@ -16,14 +29,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
   $name = trim($_POST['name'] ?? '');
   $type = $_POST['type'] ?? '';
 
-  if ($code === '' || $name === '' || !in_array($type, ['ASSET','LIABILITY','EQUITY','INCOME','COST','EXPENSE'], true)) {
+  if ($code === '' || $name === '' || !in_array($type, $TYPES, true)) {
     flash_set('err','Completa código, nombre y tipo válido.');
     redirect('accounts.php');
   }
 
   try {
-    $st = $pdo->prepare("INSERT INTO accounts(code,name,type) VALUES(?,?,?)");
-    $st->execute([$code,$name,$type]);
+    $st = $pdo->prepare("INSERT INTO accounts(company_id, code, name, type) VALUES(?,?,?,?)");
+    $st->execute([$cid, $code, $name, $type]);
     flash_set('ok','Cuenta creada.');
   } catch (Throwable $e) {
     flash_set('err','Error: ' . $e->getMessage());
@@ -43,15 +56,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
   $type = $_POST['type'] ?? '';
   $is_active = isset($_POST['is_active']) ? 1 : 0;
 
-  if ($id <= 0 || $code === '' || $name === '' || !in_array($type, ['ASSET','LIABILITY','EQUITY','INCOME','COST','EXPENSE'], true)) {
+  if ($id <= 0 || $code === '' || $name === '' || !in_array($type, $TYPES, true)) {
     flash_set('err','Datos inválidos para editar.');
     redirect('accounts.php');
   }
 
+  // Blindaje: la cuenta debe pertenecer a la empresa activa
+  $acc = get_account_in_company($pdo, $id, $cid);
+  if (!$acc) {
+    flash_set('err','Cuenta no encontrada para esta empresa.');
+    redirect('accounts.php');
+  }
+
   try {
-    // Si cambias el code a uno existente, fallará por UNIQUE => se mostrará el error
-    $st = $pdo->prepare("UPDATE accounts SET code=?, name=?, type=?, is_active=? WHERE id=?");
-    $st->execute([$code,$name,$type,$is_active,$id]);
+    // UNIQUE (company_id, code) evita duplicados dentro de la misma empresa
+    $st = $pdo->prepare("UPDATE accounts SET code=?, name=?, type=?, is_active=? WHERE id=? AND company_id=?");
+    $st->execute([$code, $name, $type, $is_active, $id, $cid]);
     flash_set('ok','Cuenta actualizada.');
   } catch (Throwable $e) {
     flash_set('err','Error: ' . $e->getMessage());
@@ -68,18 +88,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
   $id = (int)($_POST['id'] ?? 0);
   if ($id <= 0) redirect('accounts.php');
 
-  $cnt = $pdo->prepare("SELECT COUNT(*) c FROM journal_lines WHERE account_id=?");
-  $cnt->execute([$id]);
-  $hasMoves = ((int)$cnt->fetch()['c']) > 0;
+  // Blindaje: la cuenta debe pertenecer a la empresa activa
+  $acc = get_account_in_company($pdo, $id, $cid);
+  if (!$acc) {
+    flash_set('err','Cuenta no encontrada para esta empresa.');
+    redirect('accounts.php');
+  }
+
+  // movimientos SOLO de la empresa activa (por seguridad)
+  $cnt = $pdo->prepare("
+    SELECT COUNT(*) c
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE jl.account_id = ? AND je.company_id = ?
+  ");
+  $cnt->execute([$id, $cid]);
+  $hasMoves = ((int)$cnt->fetchColumn()) > 0;
 
   try {
     if ($hasMoves) {
-      $st = $pdo->prepare("UPDATE accounts SET is_active=0 WHERE id=?");
-      $st->execute([$id]);
+      $st = $pdo->prepare("UPDATE accounts SET is_active=0 WHERE id=? AND company_id=?");
+      $st->execute([$id, $cid]);
       flash_set('ok','Cuenta con movimientos: se desactivó (no se elimina).');
     } else {
-      $st = $pdo->prepare("DELETE FROM accounts WHERE id=?");
-      $st->execute([$id]);
+      $st = $pdo->prepare("DELETE FROM accounts WHERE id=? AND company_id=?");
+      $st->execute([$id, $cid]);
       flash_set('ok','Cuenta eliminada.');
     }
   } catch (Throwable $e) {
@@ -91,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 /**
  * IMPORT CSV (Excel -> Guardar como CSV)
  * Columnas: code,name,type,is_active (is_active opcional)
+ * Aplica por empresa activa (company_id)
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import_csv') {
   csrf_check($_POST['csrf'] ?? '');
@@ -109,8 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
   $pdo->beginTransaction();
   try {
     $up = $pdo->prepare("
-      INSERT INTO accounts(code,name,type,is_active)
-      VALUES(?,?,?,?)
+      INSERT INTO accounts(company_id, code, name, type, is_active)
+      VALUES(?,?,?,?,?)
       ON DUPLICATE KEY UPDATE
         name=VALUES(name),
         type=VALUES(type),
@@ -121,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
     while (($data = fgetcsv($fh, 0, ",")) !== false) {
       $row++;
 
-      // Permite encabezado
+      // encabezado opcional
       if ($row === 1 && isset($data[0]) && strtolower(trim($data[0])) === 'code') continue;
 
       $code = trim($data[0] ?? '');
@@ -129,18 +163,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
       $type = trim($data[2] ?? '');
       $active = isset($data[3]) ? (int)$data[3] : 1;
 
-      if ($code === '' || $name === '' || !in_array($type, ['ASSET','LIABILITY','EQUITY','INCOME','COST','EXPENSE'], true)) {
+      if ($code === '' || $name === '' || !in_array($type, $TYPES, true)) {
         continue;
       }
 
       $active = $active ? 1 : 0;
-      $up->execute([$code,$name,$type,$active]);
+      $up->execute([$cid, $code, $name, $type, $active]);
       $ok++;
     }
 
     fclose($fh);
     $pdo->commit();
-    flash_set('ok',"Importación OK. Filas aplicadas: $ok");
+    flash_set('ok',"Importación OK (empresa activa). Filas aplicadas: $ok");
   } catch (Throwable $e) {
     $pdo->rollBack();
     flash_set('err','Error importando: ' . $e->getMessage());
@@ -148,16 +182,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
   redirect('accounts.php');
 }
 
-// Edit mode
+/**
+ * Edit mode (solo de la empresa activa)
+ */
 $editId = (int)($_GET['edit_id'] ?? 0);
 $editAcc = null;
 if ($editId > 0) {
-  $st = $pdo->prepare("SELECT * FROM accounts WHERE id=?");
-  $st->execute([$editId]);
-  $editAcc = $st->fetch();
+  $editAcc = get_account_in_company($pdo, $editId, $cid);
+  if (!$editAcc) {
+    flash_set('err','Esa cuenta no existe en la empresa activa.');
+    redirect('accounts.php');
+  }
 }
 
-$rows = $pdo->query("SELECT * FROM accounts ORDER BY code")->fetchAll();
+/**
+ * Listado SOLO de la empresa activa
+ */
+$st = $pdo->prepare("SELECT * FROM accounts WHERE company_id=? ORDER BY code");
+$st->execute([$cid]);
+$rows = $st->fetchAll();
 
 require __DIR__ . '/partials/header.php';
 ?>
@@ -198,7 +241,7 @@ require __DIR__ . '/partials/header.php';
     </div>
   </form>
 
-  <!-- Editar (solo si hay edit_id) -->
+  <!-- Editar -->
   <?php if ($editAcc): ?>
     <form method="post" class="card" style="margin-top:12px">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
@@ -229,7 +272,7 @@ require __DIR__ . '/partials/header.php';
         </div>
 
         <div class="field" style="align-self:flex-end">
-          <label>
+          <label style="display:flex;gap:8px;align-items:center">
             <input type="checkbox" name="is_active" <?= $editAcc['is_active'] ? 'checked' : '' ?>>
             Activa
           </label>
@@ -248,7 +291,7 @@ require __DIR__ . '/partials/header.php';
     <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
     <input type="hidden" name="action" value="import_csv">
     <h3>Importar plan de cuentas (CSV desde Excel)</h3>
-    <div class="small">Columnas: <b>code,name,type,is_active</b> (is_active opcional). Tipos: ASSET, LIABILITY, EQUITY, INCOME, COST, EXPENSE</div>
+    <div class="small">Se aplica SOLO a la <b>empresa activa</b>. Columnas: <b>code,name,type,is_active</b> (is_active opcional).</div>
 
     <div class="row" style="margin-top:10px">
       <div class="field" style="flex:1">
@@ -278,14 +321,14 @@ require __DIR__ . '/partials/header.php';
           <td><?= h($r['name']) ?></td>
           <td><?= h($r['type']) ?></td>
           <td><?= $r['is_active'] ? 'Sí' : 'No' ?></td>
-          <td>
-            <a class="btn secondary" href="accounts.php?edit_id=<?= (int)$r['id'] ?>">Editar</a>
+          <td style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn secondary smallbtn" href="accounts.php?edit_id=<?= (int)$r['id'] ?>">Editar</a>
 
             <form method="post" style="display:inline-block" onsubmit="return confirm('¿Eliminar / desactivar esta cuenta?');">
               <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-              <button class="btn danger" type="submit">Eliminar</button>
+              <button class="btn danger smallbtn" type="submit">Eliminar</button>
             </form>
           </td>
         </tr>

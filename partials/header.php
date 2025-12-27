@@ -40,6 +40,14 @@ $nav = [
   ['label'=>'Libro mayor',    'href'=>'ledger.php'],
   ['label'=>'EE.RR.',         'href'=>'reports_is.php'],
   ['label'=>'Balance',        'href'=>'reports_bs.php'],
+
+  // Soporte (canal externo)
+  [
+    'label' => 'Soporte (WhatsApp)',
+    'href'  => 'https://chat.whatsapp.com/DswhlGROm1R2rNOiGDCvHY',
+    'external' => true,
+    'title' => 'Canal de soporte y mejoras: deja feedback, reporta errores y propone funciones para mejorar el software.'
+  ],
 ];
 
 function is_active_nav(string $href): bool {
@@ -94,10 +102,25 @@ function is_active_nav(string $href): bool {
     <div class="sidebar-title">Menú</div>
     <nav class="nav">
       <?php foreach ($nav as $item): ?>
-        <a class="<?= is_active_nav($item['href']) ? 'active' : '' ?>" href="<?= h($item['href']) ?>">
-          <?= h($item['label']) ?>
+        <?php
+            $isExternal = !empty($item['external']);
+            $title = $item['title'] ?? '';
+            $href = $item['href'];
+            $active = (!$isExternal && is_active_nav($href)) ? 'active' : '';
+        ?>
+        <a
+            class="<?= $active ?>"
+            href="<?= h($href) ?>"
+            <?= $title ? 'title="'.h($title).'"' : '' ?>
+            <?= $isExternal ? 'target="_blank" rel="noopener noreferrer"' : '' ?>
+        >
+            <?= h($item['label']) ?>
+            <?php if ($isExternal): ?>
+            <span class="nav-hint">↗</span>
+            <?php endif; ?>
         </a>
-      <?php endforeach; ?>
+    <?php endforeach; ?>
+
     </nav>
   </aside>
 
