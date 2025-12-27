@@ -2,18 +2,40 @@
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_login();
+require_company_selected();
 
 $pdo = db();
+$cid = current_company_id();
 
-$accounts = $pdo->query("SELECT id,code,name FROM accounts WHERE is_active=1 ORDER BY code")->fetchAll();
+/**
+ * Helpers locales por si no existen en tu helpers.php
+ */
+if (!function_exists('date_range_from_shortcut')) {
+  function date_range_from_shortcut(string $p): array {
+    $today = new DateTime('today');
+    if ($p === 'week') {
+      $monday = (clone $today)->modify('monday this week');
+      $sunday = (clone $monday)->modify('+6 days');
+      return [$monday->format('Y-m-d'), $sunday->format('Y-m-d')];
+    }
+    $from = (new DateTime('first day of this month'))->format('Y-m-d');
+    $to   = (new DateTime('last day of this month'))->format('Y-m-d');
+    return [$from, $to];
+  }
+}
+
+// Cuentas de la empresa activa
+$accSt = $pdo->prepare("SELECT id, code, name FROM accounts WHERE company_id=? AND is_active=1 ORDER BY code");
+$accSt->execute([$cid]);
+$accounts = $accSt->fetchAll();
 
 $accountId = (int)($_GET['account_id'] ?? 0);
-$shortcut = $_GET['p'] ?? '';
-$ym = $_GET['ym'] ?? '';
+$shortcut  = $_GET['p'] ?? '';
+$ym        = $_GET['ym'] ?? '';
 
 if ($ym && preg_match('/^\d{4}-\d{2}$/', $ym)) {
   $from = $ym . '-01';
-  $to = date('Y-m-t', strtotime($from));
+  $to   = date('Y-m-t', strtotime($from));
 } elseif (in_array($shortcut, ['week','month'], true)) {
   [$from,$to] = date_range_from_shortcut($shortcut);
 } else {
@@ -31,25 +53,29 @@ $currentYM = substr($from, 0, 7);
 
 $movs = [];
 $acc = null;
-$saldoInicial = 0;
+$saldoInicial = 0.0;
 
 if ($accountId > 0) {
-  $accSt = $pdo->prepare("SELECT * FROM accounts WHERE id=?");
-  $accSt->execute([$accountId]);
-  $acc = $accSt->fetch();
+  // validar que la cuenta sea de la empresa activa
+  $a = $pdo->prepare("SELECT * FROM accounts WHERE id=? AND company_id=?");
+  $a->execute([$accountId, $cid]);
+  $acc = $a->fetch();
 
   if ($acc) {
+    // saldo inicial acumulado antes del periodo
     $si = $pdo->prepare("
       SELECT COALESCE(SUM(l.debit - l.credit),0) v
       FROM journal_lines l
       JOIN journal_entries e ON e.id=l.entry_id
       WHERE e.status='POSTED'
+        AND e.company_id=?
         AND l.account_id=?
         AND e.entry_date < ?
     ");
-    $si->execute([$accountId, $from]);
+    $si->execute([$cid, $accountId, $from]);
     $saldoInicial = (float)$si->fetch()['v'];
 
+    // movimientos del periodo
     $st = $pdo->prepare("
       SELECT
         e.id AS entry_id,
@@ -61,11 +87,12 @@ if ($accountId > 0) {
       FROM journal_lines l
       JOIN journal_entries e ON e.id=l.entry_id
       WHERE e.status='POSTED'
+        AND e.company_id=?
         AND l.account_id=?
         AND e.entry_date BETWEEN ? AND ?
       ORDER BY e.entry_date ASC, e.id ASC, l.line_no ASC
     ");
-    $st->execute([$accountId, $from, $to]);
+    $st->execute([$cid, $accountId, $from, $to]);
     $movs = $st->fetchAll();
   }
 }
@@ -78,7 +105,6 @@ require __DIR__ . '/partials/header.php';
 
   <form class="card" method="get">
     <div class="row">
-
       <div class="field" style="flex:1">
         <label>Cuenta</label>
         <select name="account_id" required>
@@ -127,14 +153,13 @@ require __DIR__ . '/partials/header.php';
       <div class="field" style="align-self:flex-end">
         <a class="btn secondary" href="ledger.php?account_id=<?= (int)$accountId ?>&p=month">Este mes</a>
       </div>
-
     </div>
   </form>
 
   <?php if ($accountId <= 0): ?>
     <div class="small">Selecciona una cuenta para ver su mayor.</div>
   <?php elseif (!$acc): ?>
-    <div class="small">La cuenta seleccionada no existe.</div>
+    <div class="small">La cuenta seleccionada no existe o no pertenece a la empresa activa.</div>
   <?php else: ?>
     <div class="small">
       Cuenta: <b><?= h($acc['code']) ?> — <?= h($acc['name']) ?></b><br>

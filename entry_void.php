@@ -2,6 +2,8 @@
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_login();
+require_company_selected();
+
 csrf_check($_GET['csrf'] ?? '');
 $pdo = db();
 

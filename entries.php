@@ -2,33 +2,41 @@
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_login();
+require_company_selected();
 
 $pdo = db();
+$cid = current_company_id();
+
+/**
+ * Helpers locales por si no existen en tu helpers.php
+ */
+if (!function_exists('date_range_from_shortcut')) {
+  function date_range_from_shortcut(string $p): array {
+    $today = new DateTime('today');
+    if ($p === 'week') {
+      $monday = (clone $today)->modify('monday this week');
+      $sunday = (clone $monday)->modify('+6 days');
+      return [$monday->format('Y-m-d'), $sunday->format('Y-m-d')];
+    }
+    // month
+    $from = (new DateTime('first day of this month'))->format('Y-m-d');
+    $to   = (new DateTime('last day of this month'))->format('Y-m-d');
+    return [$from, $to];
+  }
+}
 
 $shortcut = $_GET['p'] ?? '';
 $ym = $_GET['ym'] ?? '';
 
 if ($ym && preg_match('/^\d{4}-\d{2}$/', $ym)) {
   $from = $ym . '-01';
-  $to = date('Y-m-t', strtotime($from));
+  $to   = date('Y-m-t', strtotime($from));
 } elseif (in_array($shortcut, ['week','month'], true)) {
   [$from, $to] = date_range_from_shortcut($shortcut);
 } else {
   $from = $_GET['from'] ?? date('Y-m-01');
   $to   = $_GET['to']   ?? date('Y-m-t');
 }
-
-// Datos
-$st = $pdo->prepare("
-  SELECT e.*,
-    (SELECT COALESCE(SUM(l.debit),0) FROM journal_lines l WHERE l.entry_id=e.id) debit_total,
-    (SELECT COALESCE(SUM(l.credit),0) FROM journal_lines l WHERE l.entry_id=e.id) credit_total
-  FROM journal_entries e
-  WHERE e.entry_date BETWEEN ? AND ?
-  ORDER BY e.entry_date DESC, e.id DESC
-");
-$st->execute([$from, $to]);
-$rows = $st->fetchAll();
 
 // UI Mes/Año
 $years = range((int)date('Y') - 3, (int)date('Y') + 1);
@@ -38,6 +46,19 @@ $months = [
 ];
 $currentYM = substr($from, 0, 7);
 
+// Consulta (solo empresa activa)
+$st = $pdo->prepare("
+  SELECT e.*,
+    (SELECT COALESCE(SUM(l.debit),0)  FROM journal_lines l WHERE l.entry_id=e.id) AS debit_total,
+    (SELECT COALESCE(SUM(l.credit),0) FROM journal_lines l WHERE l.entry_id=e.id) AS credit_total
+  FROM journal_entries e
+  WHERE e.company_id = ?
+    AND e.entry_date BETWEEN ? AND ?
+  ORDER BY e.entry_date DESC, e.id DESC
+");
+$st->execute([$cid, $from, $to]);
+$rows = $st->fetchAll();
+
 require __DIR__ . '/partials/header.php';
 ?>
 
@@ -46,7 +67,6 @@ require __DIR__ . '/partials/header.php';
 
   <form class="card" method="get">
     <div class="row">
-
       <div class="field">
         <label>Mes/Año rápido</label>
         <select name="ym" onchange="this.form.submit()">
@@ -87,11 +107,12 @@ require __DIR__ . '/partials/header.php';
       <div class="field" style="align-self:flex-end; margin-left:auto">
         <a class="btn" href="entry_new.php">Crear asiento</a>
       </div>
-
     </div>
   </form>
 
-  <div class="small">Mostrando movimientos desde <b><?= h($from) ?></b> hasta <b><?= h($to) ?></b>.</div>
+  <div class="small">
+    Mostrando movimientos desde <b><?= h($from) ?></b> hasta <b><?= h($to) ?></b>.
+  </div>
 
   <table class="table" style="margin-top:10px">
     <thead>
