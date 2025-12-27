@@ -1,6 +1,9 @@
 <?php
 // lib/helpers.php
 // Helpers generales + Auth + CSRF + Flash + Multiempresa + CLP
+// Fuente única de verdad para sesión/auth: $_SESSION['user'] (id,email,name)
+
+declare(strict_types=1);
 
 if (session_status() === PHP_SESSION_NONE) {
   session_start();
@@ -16,25 +19,26 @@ function h(string $s): string {
 }
 
 function redirect(string $path): void {
+  $path = str_replace(["\r", "\n"], '', $path);
   header("Location: $path");
   exit;
 }
 
+function get_str(string $key, string $default = ''): string {
+  $v = $_GET[$key] ?? $default;
+  return is_string($v) ? trim($v) : $default;
+}
+
 /* =========================
-   Flash messages (compat + por clave)
-   - Compat anterior: flash_set(type,msg) + flash_get() => ['type','msg']
-   - Nuevo: flash_set('ok','...'), flash_get('ok')
+   Flash messages (por clave)
 ========================= */
 function flash_set(string $keyOrType, string $msg): void {
-  // Guardamos en modo "nuevo" por clave:
   $_SESSION['flash_map'][$keyOrType] = $msg;
-
-  // También mantenemos tu formato anterior (type/msg) por compatibilidad:
+  // compat antigua
   $_SESSION['flash'] = ['type' => $keyOrType, 'msg' => $msg];
 }
 
 function flash_get(?string $key = null) {
-  // Modo nuevo: por clave
   if ($key !== null) {
     if (!isset($_SESSION['flash_map'][$key])) return null;
     $v = $_SESSION['flash_map'][$key];
@@ -42,7 +46,6 @@ function flash_get(?string $key = null) {
     return $v;
   }
 
-  // Modo anterior: retorna array ['type','msg']
   $f = $_SESSION['flash'] ?? null;
   unset($_SESSION['flash']);
   return $f;
@@ -66,54 +69,138 @@ function csrf_check($token): void {
 }
 
 /* =========================
-   Rango de fechas por shortcut
+   Fechas / Rangos (para filtros rápidos)
+   - is_valid_date('Y-m-d')
+   - ym_range('YYYY-MM')
+   - date_range_from_shortcut('week'|'month'|'last_month'|'last_3_months')
 ========================= */
+function is_valid_date(string $s): bool {
+  if ($s === '') return false;
+  $d = DateTime::createFromFormat('Y-m-d', $s);
+  return $d !== false && $d->format('Y-m-d') === $s;
+}
+
+function is_valid_ym(string $ym): bool {
+  // YYYY-MM
+  return (bool)preg_match('/^\d{4}\-(0[1-9]|1[0-2])$/', $ym);
+}
+
+function last_day_of_month(int $year, int $month): string {
+  $dt = DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-01', $year, $month));
+  $dt->modify('last day of this month');
+  return $dt->format('Y-m-d');
+}
+
+function ym_range(string $ym): array {
+  if (!is_valid_ym($ym)) return ['', ''];
+  $year = (int)substr($ym, 0, 4);
+  $month = (int)substr($ym, 5, 2);
+  $from = sprintf('%04d-%02d-01', $year, $month);
+  $to   = last_day_of_month($year, $month);
+  return [$from, $to];
+}
+
 function date_range_from_shortcut(string $shortcut): array {
   $today = new DateTime('today');
 
   if ($shortcut === 'week') {
     $start = (clone $today)->modify('monday this week');
-    $end = (clone $start)->modify('+6 days');
+    $end   = (clone $start)->modify('+6 days');
     return [$start->format('Y-m-d'), $end->format('Y-m-d')];
   }
 
   if ($shortcut === 'month') {
     $start = new DateTime(date('Y-m-01'));
-    $end = (clone $start)->modify('last day of this month');
+    $end   = (clone $start)->modify('last day of this month');
+    return [$start->format('Y-m-d'), $end->format('Y-m-d')];
+  }
+
+  if ($shortcut === 'last_month') {
+    $start = (new DateTime('first day of last month'))->setTime(0,0,0);
+    $end   = (new DateTime('last day of last month'))->setTime(0,0,0);
+    return [$start->format('Y-m-d'), $end->format('Y-m-d')];
+  }
+
+  if ($shortcut === 'last_3_months') {
+    // desde el 1° del mes (hace 2 meses) hasta fin del mes actual
+    $start = (new DateTime('first day of -2 months'))->setTime(0,0,0);
+    $end   = (new DateTime('last day of this month'))->setTime(0,0,0);
     return [$start->format('Y-m-d'), $end->format('Y-m-d')];
   }
 
   return ['', ''];
 }
 
-/* =========================
-   Auth (manteniendo tu lógica actual)
-========================= */
-function is_logged_in(): bool {
-  return !empty($_SESSION['user']);
+/**
+ * Resuelve filtros desde GET:
+ * - prioridad 1: ym=YYYY-MM
+ * - prioridad 2: range=week|month|last_month|last_3_months
+ * - prioridad 3: from=Y-m-d & to=Y-m-d
+ */
+function resolve_date_filters(): array {
+  $ym = get_str('ym');
+  if ($ym !== '') {
+    [$from, $to] = ym_range($ym);
+    if ($from !== '' && $to !== '') return ['from' => $from, 'to' => $to, 'ym' => $ym, 'range' => ''];
+  }
+
+  $range = get_str('range');
+  if ($range !== '') {
+    [$from, $to] = date_range_from_shortcut($range);
+    if ($from !== '' && $to !== '') return ['from' => $from, 'to' => $to, 'ym' => '', 'range' => $range];
+  }
+
+  $from = get_str('from');
+  $to   = get_str('to');
+  if (is_valid_date($from) && is_valid_date($to)) {
+    return ['from' => $from, 'to' => $to, 'ym' => '', 'range' => ''];
+  }
+
+  return ['from' => '', 'to' => '', 'ym' => '', 'range' => ''];
 }
 
-function require_login(): void {
-  $public = ['login.php', 'setup_admin.php'];
-  $current = basename($_SERVER['SCRIPT_NAME'] ?? '');
-  if (in_array($current, $public, true)) return;
-
-  if (!is_logged_in()) {
-    redirect('login.php');
-  }
+/* =========================
+   Auth (sesión estándar)
+========================= */
+function is_logged_in(): bool {
+  return !empty($_SESSION['user']) && !empty($_SESSION['user']['id']);
 }
 
 function current_user(): ?array {
   return $_SESSION['user'] ?? null;
 }
 
+function require_login(): void {
+  $public = [
+    'login.php',
+    'setup_admin.php',
+    'register.php',
+    'forgot_password.php',
+    'reset_password.php',
+  ];
+
+  $current = basename($_SERVER['SCRIPT_NAME'] ?? '');
+  if (in_array($current, $public, true)) return;
+
+  if (!is_logged_in()) redirect('login.php');
+}
+
 function login_user(int $id, string $email, string $name): void {
-  $_SESSION['user'] = ['id' => $id, 'email' => $email, 'name' => $name];
+  // Seguridad: evita session fixation
+  session_regenerate_id(true);
+
+  $_SESSION['user'] = [
+    'id' => $id,
+    'email' => $email,
+    'name' => $name,
+  ];
 }
 
 function logout_user(): void {
   unset($_SESSION['user']);
-  unset($_SESSION['company_id']); // al salir, limpiamos empresa activa también
+  unset($_SESSION['company_id']);
+  unset($_SESSION['csrf']);
+  session_regenerate_id(true);
 }
 
 /* =========================
@@ -127,22 +214,15 @@ function set_company_id(int $companyId): void {
   $_SESSION['company_id'] = $companyId;
 }
 
-/**
- * Verifica si un usuario tiene acceso a una empresa
- * Requiere tabla user_companies(user_id, company_id)
- */
 function user_has_company(int $userId, int $companyId): bool {
+  if ($userId <= 0 || $companyId <= 0) return false;
+
   $pdo = db();
   $st = $pdo->prepare("SELECT 1 FROM user_companies WHERE user_id=? AND company_id=? LIMIT 1");
   $st->execute([$userId, $companyId]);
   return (bool)$st->fetchColumn();
 }
 
-/**
- * Asegura que exista una empresa seleccionada en sesión
- * Si no hay, selecciona automáticamente la primera empresa del usuario
- * Si no tiene empresas, lo manda a companies.php
- */
 function require_company_selected(): void {
   require_login();
   $u = current_user();
@@ -151,10 +231,8 @@ function require_company_selected(): void {
   $userId = (int)$u['id'];
   $cid = current_company_id();
 
-  // Si ya hay empresa y el usuario tiene acceso, ok
   if ($cid > 0 && user_has_company($userId, $cid)) return;
 
-  // Buscar primera empresa del usuario
   $pdo = db();
   $st = $pdo->prepare("
     SELECT c.id
@@ -172,14 +250,10 @@ function require_company_selected(): void {
     return;
   }
 
-  // No tiene empresas
   flash_set('err', 'No tienes empresas creadas. Crea una para comenzar.');
   redirect('companies.php');
 }
 
-/**
- * Fuerza acceso a la empresa indicada (por seguridad si recibes company_id por URL/POST)
- */
 function require_company_access(int $companyId): void {
   require_login();
   $u = current_user();
@@ -191,10 +265,6 @@ function require_company_access(int $companyId): void {
   }
 }
 
-/**
- * Helper opcional para queries: te devuelve "company_id = ?"
- * Útil para armar where de forma consistente.
- */
 function company_where(): string {
   return "company_id = " . (int)current_company_id();
 }
@@ -203,6 +273,32 @@ function company_where(): string {
    CLP sin decimales
 ========================= */
 function clp($n): string {
-  // CLP real: sin decimales
   return '$' . number_format((float)$n, 0, ',', '.');
+}
+
+/* =========================
+   Utilidades
+========================= */
+function validate_email(string $email): bool {
+  return (bool)filter_var($email, FILTER_VALIDATE_EMAIL);
+}
+
+function validate_password(string $password, int $minLen = 6): bool {
+  return mb_strlen($password) >= $minLen;
+}
+
+function generate_token(int $bytes = 32): string {
+  return bin2hex(random_bytes($bytes));
+}
+
+function base_url(): string {
+  $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+  $scheme = $https ? 'https' : 'http';
+  $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+  return $scheme . '://' . $host;
+}
+
+function current_url(): string {
+  $uri = $_SERVER['REQUEST_URI'] ?? '/';
+  return base_url() . $uri;
 }

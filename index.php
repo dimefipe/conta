@@ -7,73 +7,46 @@ require_company_selected();
 $pdo = db();
 $cid = current_company_id();
 
-// -------------------------
-// Helpers fechas
-// -------------------------
-function last_day_of_month(int $year, int $month): string {
-  $dt = DateTime::createFromFormat('Y-m-d', sprintf('%04d-%02d-01', $year, $month));
-  $dt->modify('last day of this month');
-  return $dt->format('Y-m-d');
+/**
+ * -------------------------
+ * Filtros de fecha (centralizados en helpers.php)
+ * - Preferido: ym=YYYY-MM
+ * - Compat: m=1..12 & y=YYYY
+ * - Atajos: range=week|month|last_month|last_3_months
+ * - Manual: from=Y-m-d & to=Y-m-d
+ * -------------------------
+ */
+$shortcut = get_str('range'); // para pintar select
+
+// Compat: si llega m/y => lo convertimos a ym (sin redirigir)
+$m = (int)($_GET['m'] ?? 0);
+$y = (int)($_GET['y'] ?? 0);
+if ($m >= 1 && $m <= 12 && $y >= 2000 && $y <= 2100) {
+  $_GET['ym'] = sprintf('%04d-%02d', $y, $m);
+  $shortcut = ''; // si eligió mes/año, no mostramos rango activo
 }
 
-function ym_range(int $year, int $month): array {
-  $from = sprintf('%04d-%02d-01', $year, $month);
-  $to   = last_day_of_month($year, $month);
-  return [$from, $to];
-}
+// Resolver usando helper
+$filters = resolve_date_filters();
+$from = $filters['from'];
+$to   = $filters['to'];
+$ym   = $filters['ym'];
 
-function is_valid_date($s): bool {
-  if (!$s) return false;
-  $d = DateTime::createFromFormat('Y-m-d', $s);
-  return $d && $d->format('Y-m-d') === $s;
-}
-
-// -------------------------
-// Construir filtros
-// -------------------------
-$shortcut = $_GET['range'] ?? '';          // 'week' | 'month'
-$from     = $_GET['from']  ?? '';
-$to       = $_GET['to']    ?? '';
-
-$selMonth = (int)($_GET['m'] ?? 0);        // 1..12
-$selYear  = (int)($_GET['y'] ?? 0);
-
-// Default: mes actual
-$now = new DateTime('today');
-$defaultMonth = (int)$now->format('n');
-$defaultYear  = (int)$now->format('Y');
-
-if ($selMonth < 1 || $selMonth > 12) $selMonth = $defaultMonth;
-if ($selYear < 2000 || $selYear > 2100) $selYear = $defaultYear;
-
-// Si viene m/y => manda (01..último día)
-if (!empty($_GET['m']) && !empty($_GET['y'])) {
-  [$from, $to] = ym_range($selYear, $selMonth);
-} else if ($shortcut === 'week' || $shortcut === 'month') {
-  [$from, $to] = date_range_from_shortcut($shortcut);
-} else {
-  // si no hay nada, usar mes actual
-  if (!is_valid_date($from) || !is_valid_date($to)) {
-    [$from, $to] = ym_range($defaultYear, $defaultMonth);
-    $selMonth = $defaultMonth;
-    $selYear  = $defaultYear;
-  }
-}
-
-// Sanitizar
-if (!is_valid_date($from)) $from = '';
-if (!is_valid_date($to)) $to = '';
-
+// Default duro: mes actual
 if ($from === '' || $to === '') {
-  // fallback duro: mes actual
-  [$from, $to] = ym_range($defaultYear, $defaultMonth);
-  $selMonth = $defaultMonth;
-  $selYear  = $defaultYear;
+  $ym = date('Y-m');
+  [$from, $to] = ym_range($ym);
 }
 
-// -------------------------
-// Armar opciones Año (según data de la empresa)
-// -------------------------
+// Para select Mes/Año (si hay ym válido)
+$selYear  = (is_valid_ym($ym)) ? (int)substr($ym, 0, 4) : (int)date('Y');
+$selMonth = (is_valid_ym($ym)) ? (int)substr($ym, 5, 2) : (int)date('n');
+
+/**
+ * -------------------------
+ * Años disponibles (según data real)
+ * -------------------------
+ */
 $stMin = $pdo->prepare("SELECT MIN(entry_date) FROM journal_entries WHERE company_id=?");
 $stMax = $pdo->prepare("SELECT MAX(entry_date) FROM journal_entries WHERE company_id=?");
 $stMin->execute([$cid]);
@@ -82,20 +55,21 @@ $stMax->execute([$cid]);
 $minDate = $stMin->fetchColumn();
 $maxDate = $stMax->fetchColumn();
 
-$minYear = $minDate ? (int)substr($minDate, 0, 4) : $defaultYear;
-$maxYear = $maxDate ? (int)substr($maxDate, 0, 4) : $defaultYear;
+$defaultYear = (int)date('Y');
+$minYear = $minDate ? (int)substr((string)$minDate, 0, 4) : $defaultYear;
+$maxYear = $maxDate ? (int)substr((string)$maxDate, 0, 4) : $defaultYear;
+
+if ($minYear > $maxYear) { $tmp = $minYear; $minYear = $maxYear; $maxYear = $tmp; }
 
 $years = range($maxYear, $minYear);
 if (!$years) $years = [$defaultYear];
 
-// -------------------------
-// Consultas KPI (solo POSTED)
-// -------------------------
+/**
+ * -------------------------
+ * Consultas KPI (solo POSTED)
+ * -------------------------
+ */
 function sum_by_types_period(PDO $pdo, int $cid, array $types, string $from, string $to): float {
-  // Devuelve neto según convención:
-  // - INCOME, LIABILITY, EQUITY => (credit - debit)
-  // - ASSET, COST, EXPENSE     => (debit - credit)
-  // Aquí lo usamos por tipo específico, así que hacemos por tipo y signo.
   $in = implode(',', array_fill(0, count($types), '?'));
 
   $sql = "
@@ -132,8 +106,6 @@ function sum_by_types_period(PDO $pdo, int $cid, array $types, string $from, str
 }
 
 function sum_balance_asof(PDO $pdo, int $cid, string $to): array {
-  // Balance “a la fecha” (hasta $to)
-  // Retorna [assets, liabilities, equity]
   $sql = "
     SELECT a.type,
            COALESCE(SUM(jl.debit),0)  AS d,
@@ -163,16 +135,18 @@ function sum_balance_asof(PDO $pdo, int $cid, string $to): array {
   return [$assets, $liab, $eq];
 }
 
-$ingresos = sum_by_types_period($pdo, $cid, ['INCOME'], $from, $to);
-$costos   = sum_by_types_period($pdo, $cid, ['COST'], $from, $to);
-$gastos   = sum_by_types_period($pdo, $cid, ['EXPENSE'], $from, $to);
+$ingresos  = sum_by_types_period($pdo, $cid, ['INCOME'],  $from, $to);
+$costos    = sum_by_types_period($pdo, $cid, ['COST'],    $from, $to);
+$gastos    = sum_by_types_period($pdo, $cid, ['EXPENSE'], $from, $to);
 $resultado = $ingresos - $costos - $gastos;
 
 [$bsAssets, $bsLiab, $bsEq] = sum_balance_asof($pdo, $cid, $to);
 
-// -------------------------
-// Últimos asientos del periodo
-// -------------------------
+/**
+ * -------------------------
+ * Últimos asientos del periodo
+ * -------------------------
+ */
 $stEntries = $pdo->prepare("
   SELECT id, entry_date, description
   FROM journal_entries
@@ -201,6 +175,15 @@ require __DIR__ . '/partials/header.php';
   <form method="get" class="card" style="margin-top:12px">
     <h3 style="margin-top:0">Filtros rápidos</h3>
 
+    <!-- Botones rápidos -->
+    <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:10px">
+      <a class="btn secondary smallbtn" href="index.php?range=month">Mes actual</a>
+      <a class="btn secondary smallbtn" href="index.php?range=last_month">Mes anterior</a>
+      <a class="btn secondary smallbtn" href="index.php?range=last_3_months">Últimos 3 meses</a>
+      <a class="btn secondary smallbtn" href="index.php?range=week">Semana actual</a>
+      <a class="btn secondary smallbtn" href="index.php">Reset</a>
+    </div>
+
     <div class="row">
       <!-- Mes / Año -->
       <div class="field" style="min-width:220px">
@@ -217,9 +200,9 @@ require __DIR__ . '/partials/header.php';
       <div class="field" style="min-width:180px">
         <label>Año</label>
         <select name="y">
-          <?php foreach ($years as $y): ?>
-            <option value="<?= (int)$y ?>" <?= ((int)$y === (int)$selYear) ? 'selected' : '' ?>>
-              <?= (int)$y ?>
+          <?php foreach ($years as $yy): ?>
+            <option value="<?= (int)$yy ?>" <?= ((int)$yy === (int)$selYear) ? 'selected' : '' ?>>
+              <?= (int)$yy ?>
             </option>
           <?php endforeach; ?>
         </select>
@@ -232,12 +215,14 @@ require __DIR__ . '/partials/header.php';
 
     <div class="row" style="margin-top:10px; align-items:flex-end">
       <!-- Atajos -->
-      <div class="field" style="min-width:220px">
+      <div class="field" style="min-width:260px">
         <label>Atajos</label>
         <select name="range">
           <option value="">—</option>
           <option value="week" <?= ($shortcut==='week')?'selected':'' ?>>Semana actual</option>
           <option value="month" <?= ($shortcut==='month')?'selected':'' ?>>Mes actual</option>
+          <option value="last_month" <?= ($shortcut==='last_month')?'selected':'' ?>>Mes anterior</option>
+          <option value="last_3_months" <?= ($shortcut==='last_3_months')?'selected':'' ?>>Últimos 3 meses</option>
         </select>
       </div>
 
@@ -254,7 +239,6 @@ require __DIR__ . '/partials/header.php';
 
       <div class="field">
         <button class="btn secondary" type="submit">Aplicar</button>
-        <a class="btn secondary" href="index.php">Reset</a>
       </div>
     </div>
 

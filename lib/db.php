@@ -1,16 +1,30 @@
 <?php
 // lib/db.php
+declare(strict_types=1);
+
+/**
+ * Conexión PDO (singleton)
+ * Uso:
+ *   $pdo = db();
+ */
 function db(): PDO {
   static $pdo = null;
-  if ($pdo) return $pdo;
+  if ($pdo instanceof PDO) return $pdo;
 
-  $cfg = require __DIR__ . '/../config.php';
-  $d = $cfg['db'];
-  $dsn = "mysql:host={$d['host']};dbname={$d['name']};charset={$d['charset']}";
+  // Ajusta aquí según tu entorno
+  $host = 'localhost';
+  $dbname = 'conta_mvp';
+  $user = 'root';
+  $pass = '';
 
-  $pdo = new PDO($dsn, $d['user'], $d['pass'], [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+  $dsn = "mysql:host={$host};dbname={$dbname};charset=utf8mb4";
+
+  $options = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-  ]);
+    PDO::ATTR_EMULATE_PREPARES   => false,
+  ];
+
+  $pdo = new PDO($dsn, $user, $pass, $options);
   return $pdo;
 }

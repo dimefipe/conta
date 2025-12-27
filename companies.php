@@ -1,3 +1,4 @@
+```php
 <?php
 require_once __DIR__ . '/lib/helpers.php';
 
@@ -5,7 +6,7 @@ require_login();
 
 $pdo = db();
 $user = current_user();
-$userId = (int)$user['id'];
+$userId = (int)($user['id'] ?? 0);
 
 $errors = [];
 $action = $_GET['action'] ?? '';
@@ -20,7 +21,12 @@ function fetch_user_companies(PDO $pdo, int $userId): array {
     ORDER BY c.created_at DESC, c.id DESC
   ");
   $st->execute([$userId]);
-  return $st->fetchAll();
+  return $st->fetchAll() ?: [];
+}
+
+function to_null_if_empty(?string $s): ?string {
+  $s = trim((string)$s);
+  return $s === '' ? null : $s;
 }
 
 // POST
@@ -29,16 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $op = $_POST['op'] ?? '';
 
   if ($op === 'create') {
-    $name = trim($_POST['name'] ?? '');
-    $rut  = trim($_POST['rut'] ?? '');
+    $name  = trim($_POST['name'] ?? '');
+    $razon = to_null_if_empty($_POST['razon_social'] ?? null);
+    $rut   = to_null_if_empty($_POST['rut'] ?? null);
+    $giro  = to_null_if_empty($_POST['giro'] ?? null);
+    $dir   = to_null_if_empty($_POST['direccion'] ?? null);
 
     if ($name === '') $errors[] = 'Nombre requerido.';
 
     if (!$errors) {
       $pdo->beginTransaction();
       try {
-        $st = $pdo->prepare("INSERT INTO companies(name, rut) VALUES(?, ?)");
-        $st->execute([$name, $rut]);
+        $st = $pdo->prepare("
+          INSERT INTO companies (name, razon_social, rut, giro, direccion)
+          VALUES (?, ?, ?, ?, ?)
+        ");
+        $st->execute([$name, $razon, $rut, $giro, $dir]);
+
         $newId = (int)$pdo->lastInsertId();
 
         $link = $pdo->prepare("INSERT INTO user_companies(user_id, company_id) VALUES(?, ?)");
@@ -51,33 +64,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('companies.php');
       } catch (Throwable $e) {
         $pdo->rollBack();
-        $errors[] = 'Error creando empresa: ' . $e->getMessage();
+
+        // RUT UNIQUE: mensaje amigable
+        if (($e instanceof PDOException) && ($e->getCode() === '23000')) {
+          $errors[] = 'Error: el RUT ya existe en otra empresa.';
+        } else {
+          $errors[] = 'Error creando empresa: ' . $e->getMessage();
+        }
       }
     }
   }
 
   if ($op === 'update') {
-    $id   = (int)($_POST['id'] ?? 0);
-    $name = trim($_POST['name'] ?? '');
-    $rut  = trim($_POST['rut'] ?? '');
+    $id    = (int)($_POST['id'] ?? 0);
+    $name  = trim($_POST['name'] ?? '');
+    $razon = to_null_if_empty($_POST['razon_social'] ?? null);
+    $rut   = to_null_if_empty($_POST['rut'] ?? null);
+    $giro  = to_null_if_empty($_POST['giro'] ?? null);
+    $dir   = to_null_if_empty($_POST['direccion'] ?? null);
 
     if ($id <= 0) $errors[] = 'Empresa inválida.';
     if ($name === '') $errors[] = 'Nombre requerido.';
 
-    if (!$errors) {
-      if (!user_has_company($userId, $id)) {
-        $errors[] = 'No tienes acceso a esta empresa.';
-      }
+    if (!$errors && !user_has_company($userId, $id)) {
+      $errors[] = 'No tienes acceso a esta empresa.';
     }
 
     if (!$errors) {
       try {
-        $st = $pdo->prepare("UPDATE companies SET name=?, rut=? WHERE id=?");
-        $st->execute([$name, $rut, $id]);
+        $st = $pdo->prepare("
+          UPDATE companies
+          SET name=?, razon_social=?, rut=?, giro=?, direccion=?
+          WHERE id=?
+        ");
+        $st->execute([$name, $razon, $rut, $giro, $dir, $id]);
+
         flash_set('ok', 'Empresa actualizada.');
         redirect('companies.php');
       } catch (Throwable $e) {
-        $errors[] = 'Error actualizando: ' . $e->getMessage();
+        if (($e instanceof PDOException) && ($e->getCode() === '23000')) {
+          $errors[] = 'Error: el RUT ya existe en otra empresa.';
+        } else {
+          $errors[] = 'Error actualizando: ' . $e->getMessage();
+        }
       }
     }
   }
@@ -97,8 +126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("DELETE FROM user_companies WHERE user_id=? AND company_id=?")
             ->execute([$userId, $id]);
 
-        // si nadie más está vinculado, borrar empresa (y cascadas)
-        $chk = $pdo->prepare("SELECT COUNT(*) c FROM user_companies WHERE company_id=?");
+        // si nadie más está vinculado, borrar empresa
+        $chk = $pdo->prepare("SELECT COUNT(*) FROM user_companies WHERE company_id=?");
         $chk->execute([$id]);
         $cnt = (int)$chk->fetchColumn();
 
@@ -127,7 +156,7 @@ $edit = null;
 if ($action === 'edit' && $editId > 0 && user_has_company($userId, $editId)) {
   $st = $pdo->prepare("SELECT * FROM companies WHERE id=?");
   $st->execute([$editId]);
-  $edit = $st->fetch();
+  $edit = $st->fetch() ?: null;
 }
 
 // Listado
@@ -165,12 +194,27 @@ require __DIR__ . '/partials/header.php';
         <div class="row">
           <div class="field" style="flex:1; min-width:240px">
             <label>Nombre</label>
-            <input name="name" value="<?= h($edit['name'] ?? '') ?>" placeholder="Ej: Empresa A">
+            <input name="name" required value="<?= h($edit['name'] ?? '') ?>" placeholder="Ej: Empresa A">
+          </div>
+
+          <div class="field" style="flex:1; min-width:240px">
+            <label>Razón social (opcional)</label>
+            <input name="razon_social" value="<?= h($edit['razon_social'] ?? '') ?>" placeholder="Ej: Empresa A SpA">
           </div>
 
           <div class="field" style="min-width:220px">
             <label>RUT (opcional)</label>
             <input name="rut" value="<?= h($edit['rut'] ?? '') ?>" placeholder="Ej: 76.123.456-7">
+          </div>
+
+          <div class="field" style="flex:1; min-width:240px">
+            <label>Giro (opcional)</label>
+            <input name="giro" value="<?= h($edit['giro'] ?? '') ?>" placeholder="Ej: Servicios de marketing">
+          </div>
+
+          <div class="field" style="flex:1; min-width:240px">
+            <label>Dirección (opcional)</label>
+            <input name="direccion" value="<?= h($edit['direccion'] ?? '') ?>" placeholder="Ej: Av. ... 123, Santiago">
           </div>
         </div>
 
@@ -183,26 +227,30 @@ require __DIR__ . '/partials/header.php';
       </form>
     </div>
 
-    <div class="card" style="flex:2; min-width:420px">
+    <div class="card" style="flex:2; min-width:520px">
       <h3>Mis empresas</h3>
 
       <table class="table">
         <thead>
           <tr>
             <th>Nombre</th>
+            <th>Razón social</th>
             <th>RUT</th>
+            <th>Dirección</th>
             <th>Activa</th>
             <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
           <?php if (!$companies): ?>
-            <tr><td colspan="4" class="small">Aún no tienes empresas.</td></tr>
+            <tr><td colspan="6" class="small">Aún no tienes empresas.</td></tr>
           <?php else: ?>
             <?php foreach ($companies as $c): ?>
               <tr>
-                <td><?= h($c['name']) ?></td>
+                <td><?= h($c['name'] ?? '') ?></td>
+                <td><?= h($c['razon_social'] ?? '') ?></td>
                 <td><?= h($c['rut'] ?? '') ?></td>
+                <td><?= h($c['direccion'] ?? '') ?></td>
                 <td><?= (current_company_id() === (int)$c['id']) ? '✅' : '' ?></td>
                 <td style="display:flex; gap:8px; flex-wrap:wrap">
                   <form method="post" action="switch_company.php">
@@ -234,3 +282,4 @@ require __DIR__ . '/partials/header.php';
 </div>
 
 <?php require __DIR__ . '/partials/footer.php'; ?>
+```
