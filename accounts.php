@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
+require_login();
 $pdo = db();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

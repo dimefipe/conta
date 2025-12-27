@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
+require_login();
 $pdo = db();
 
 [$fromMonth, $toMonth] = date_range_from_shortcut('month');

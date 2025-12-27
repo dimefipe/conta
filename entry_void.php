@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
+require_login();
 csrf_check($_GET['csrf'] ?? '');
 $pdo = db();
 

@@ -1,4 +1,28 @@
 (function () {
+  const burger = document.getElementById('burgerBtn');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('overlay');
+  const closeBtn = document.getElementById('closeSidebar');
+
+  if (!burger || !sidebar || !overlay || !closeBtn) return;
+
+  function open() {
+    sidebar.classList.add('open');
+    overlay.classList.add('open');
+  }
+  function close() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+  }
+
+  burger.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', close);
+})();
+
+
+
+(function () {
   const table = document.querySelector('#linesTable');
   if (!table) return;
 

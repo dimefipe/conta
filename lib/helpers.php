@@ -45,3 +45,30 @@ function date_range_from_shortcut(string $shortcut): array {
   }
   return ['', ''];
 }
+
+function is_logged_in(): bool {
+  return !empty($_SESSION['user']);
+}
+
+function require_login(): void {
+  $public = ['login.php','setup_admin.php'];
+  $current = basename($_SERVER['SCRIPT_NAME'] ?? '');
+  if (in_array($current, $public, true)) return;
+
+  if (!is_logged_in()) {
+    header("Location: login.php");
+    exit;
+  }
+}
+
+function current_user(): ?array {
+  return $_SESSION['user'] ?? null;
+}
+
+function login_user(int $id, string $email, string $name): void {
+  $_SESSION['user'] = ['id'=>$id,'email'=>$email,'name'=>$name];
+}
+
+function logout_user(): void {
+  unset($_SESSION['user']);
+}

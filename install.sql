@@ -68,3 +68,12 @@ INSERT INTO accounts(code,name,type) VALUES
 ('6105','Gastos - Transporte','EXPENSE'),
 ('6106','Gastos - Contabilidad / Legal','EXPENSE'),
 ('6107','Gastos - Bancarios','EXPENSE');
+
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(120) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/helpers.php';
+require_login();
 $pdo = db();
 
 $accounts = $pdo->query("SELECT id,code,name FROM accounts WHERE is_active=1 ORDER BY code")->fetchAll();
