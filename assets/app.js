@@ -3,6 +3,9 @@
    - Menú mobile toggle
    - Acordeón del nav: SOLO 1 abierto
    - El padre es link directo, la flecha es toggle (data-nav-toggle)
+   - ✅ Soporta grupos "toggle-only" (ej: Reportes):
+       - Click en el label (button.nav-group-link[data-nav-toggle])
+       - Click en la flecha (button.nav-group-toggle[data-nav-toggle])
    ========================================================= */
 
 (function () {
@@ -73,12 +76,11 @@
 
     const isDetails = (el) => el && el.tagName === 'DETAILS';
 
-    function getToggleEl(group) {
-      return (
-        group.querySelector('[data-nav-toggle]') ||
-        group.querySelector('.nav-group-toggle') ||
-        (isDetails(group) ? group.querySelector('summary') : null)
-      );
+    // ✅ Ahora devolvemos TODOS los toggles (label + flecha si existen)
+    function getToggleEls(group) {
+      const toggles = Array.from(group.querySelectorAll('[data-nav-toggle], .nav-group-toggle'));
+      // filtra duplicados (por si coinciden selectores)
+      return toggles.filter((el, i, arr) => arr.indexOf(el) === i);
     }
 
     function getPanelEl(group) {
@@ -97,10 +99,14 @@
     }
 
     // Solo los grupos que realmente tienen toggle (submenú)
-    const groups = allGroups.filter(g => !!getToggleEl(g) && !!getPanelEl(g));
+    const groups = allGroups.filter(g => {
+      const toggles = getToggleEls(g);
+      const panel = getPanelEl(g);
+      return !!toggles.length && !!panel;
+    });
 
     function setOpen(group, open) {
-      const btn = getToggleEl(group);
+      const toggles = getToggleEls(group);
 
       if (isDetails(group)) {
         group.open = !!open;
@@ -108,7 +114,9 @@
         group.classList.toggle('open', !!open);
       }
 
-      if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      // ✅ Actualiza aria-expanded en TODOS los toggles del grupo
+      toggles.forEach(btn => btn.setAttribute('aria-expanded', open ? 'true' : 'false'));
+
       log('setOpen:', groupLabel(group), '=>', open);
     }
 
@@ -145,17 +153,20 @@
 
     // 3) Bind clicks: SOLO 1 ABIERTO (y no permitimos “cerrar el último”)
     groups.forEach((g) => {
-      const btn = getToggleEl(g);
+      const toggles = getToggleEls(g);
       const panel = getPanelEl(g);
 
-      if (!btn || !panel) {
-        warn('Grupo sin toggle/panel:', groupLabel(g), { btn: !!btn, panel: !!panel });
+      if (!toggles.length || !panel) {
+        warn('Grupo sin toggle/panel:', groupLabel(g), { toggles: toggles.length, panel: !!panel });
         return;
       }
 
-      if (!btn.hasAttribute('aria-expanded')) {
-        btn.setAttribute('aria-expanded', isOpen(g) ? 'true' : 'false');
-      }
+      // Inicializa aria-expanded si falta
+      toggles.forEach(btn => {
+        if (!btn.hasAttribute('aria-expanded')) {
+          btn.setAttribute('aria-expanded', isOpen(g) ? 'true' : 'false');
+        }
+      });
 
       if (isDetails(g)) {
         g.addEventListener('toggle', () => {
@@ -168,19 +179,22 @@
         return;
       }
 
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const currentlyOpen = isOpen(g);
+      // ✅ Bind en todos los toggles del grupo (label + flecha)
+      toggles.forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const currentlyOpen = isOpen(g);
 
-        // Si está cerrado => abrir y cerrar los demás
-        if (!currentlyOpen) {
-          closeAllExcept(g);
-          setOpen(g, true);
-          return;
-        }
+          // Si está cerrado => abrir y cerrar los demás
+          if (!currentlyOpen) {
+            closeAllExcept(g);
+            setOpen(g, true);
+            return;
+          }
 
-        // Si ya está abierto => NO lo cierres (así siempre hay 1 abierto)
-        // (si quisieras permitir cierre, aquí iría: setOpen(g,false);)
+          // Si ya está abierto => NO lo cierres (así siempre hay 1 abierto)
+          // (si quisieras permitir cierre, aquí iría: setOpen(g,false);)
+        });
       });
     });
 

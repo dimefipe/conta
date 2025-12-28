@@ -104,8 +104,12 @@ function group_is_active(array $items, string $groupHref = ''): bool {
 
 /**
  * NAV agrupado:
- * - Click en fila (icono + label) => link directo del grupo (groupHref)
- * - Click en flecha => abre/cierra submenu
+ * - Default:
+ *    - Click en fila (icono + label) => link directo del grupo (groupHref)
+ *    - Click en flecha => abre/cierra submenu
+ * - Para grupos toggle_only (ej: Reportes):
+ *    - Click en fila => toggle (NO link)
+ *    - Click en flecha => toggle
  * - Para eliminar redundancias: si el primer item del grupo es el mismo href del padre,
  *   NO se renderiza dentro del submenu.
  */
@@ -142,7 +146,12 @@ $navGroups = [
     'items' => [
       ['label' => 'Ver asientos', 'href' => 'entries.php'],
       ['label' => 'Nuevo asiento', 'href' => 'entry_new.php', 'aliases' => ['entry_view.php','entry_edit.php','entry_void.php']],
-      ['label' => 'Plantillas de asientos', 'href' => 'entry_templates.php', 'disabled' => true],
+      [
+        'label' => 'Plantillas de asientos',
+        'href' => 'entry_templates.php',
+        'aliases' => ['entry_template_new.php','entry_template_edit.php','entry_template_delete.php'],
+        'disabled' => false,
+      ],
     ],
   ],
   [
@@ -157,6 +166,7 @@ $navGroups = [
     'id' => 'reportes',
     'label' => 'Reportes',
     'icon' => '📑',
+    'toggle_only' => true, // ✅ este grupo NO navega, solo despliega
     'items' => [
       ['label' => 'EE.RR.', 'href' => 'reports_is.php'],
       ['label' => 'Balance', 'href' => 'reports_bs.php'],
@@ -258,15 +268,18 @@ $supportItem = [
         <?php
           $gid   = (string)($g['id'] ?? '');
           $items = (array)($g['items'] ?? []);
+          $toggleOnly = !empty($g['toggle_only']);
 
-          // href directo del grupo: si no se setea explícito, usa el primer item habilitado
-          $groupHref = !empty($g['href']) ? (string)$g['href'] : first_enabled_href($items);
+          // href directo del grupo:
+          // - toggle_only => no navega
+          // - default => primer item habilitado (o href explícito)
+          $groupHref = $toggleOnly ? '#' : (!empty($g['href']) ? (string)$g['href'] : first_enabled_href($items));
 
-          // Para eliminar redundancia: excluye del submenu el item cuyo href sea igual al del padre
+          // Para eliminar redundancia (solo tiene sentido si el padre navega)
           $children = [];
           foreach ($items as $it) {
             $href = (string)($it['href'] ?? '');
-            if ($href !== '' && $href === $groupHref) continue;
+            if (!$toggleOnly && $href !== '' && $href === $groupHref) continue;
             $children[] = $it;
           }
 
@@ -280,13 +293,31 @@ $supportItem = [
         ?>
         <section class="nav-group <?= h($open) ?>" data-nav-group="<?= h($gid) ?>">
           <div class="nav-group-row">
-            <!-- CLICK EN FILA = ENLACE DIRECTO -->
-            <a class="nav-group-link <?= $isGroupActive ? 'active' : '' ?>" href="<?= h($groupHref) ?>">
-              <span class="nav-group-left">
-                <span class="nav-ico" aria-hidden="true"><?= h((string)$g['icon']) ?></span>
-                <span class="nav-group-title"><?= h((string)$g['label']) ?></span>
-              </span>
-            </a>
+            <?php if ($toggleOnly): ?>
+              <!-- TOGGLE-ONLY (ej: Reportes): CLICK EN FILA = TOGGLE -->
+              <button
+                class="nav-group-link <?= $isGroupActive ? 'active' : '' ?>"
+                type="button"
+                data-nav-toggle="1"
+                aria-label="Abrir/cerrar submenú"
+                aria-expanded="<?= $open ? 'true' : 'false' ?>"
+                aria-controls="<?= h($subId) ?>"
+                style="background:transparent;border:0;margin:0;width:100%;text-align:left;cursor:pointer;"
+              >
+                <span class="nav-group-left">
+                  <span class="nav-ico" aria-hidden="true"><?= h((string)$g['icon']) ?></span>
+                  <span class="nav-group-title"><?= h((string)$g['label']) ?></span>
+                </span>
+              </button>
+            <?php else: ?>
+              <!-- DEFAULT: CLICK EN FILA = ENLACE DIRECTO -->
+              <a class="nav-group-link <?= $isGroupActive ? 'active' : '' ?>" href="<?= h($groupHref) ?>">
+                <span class="nav-group-left">
+                  <span class="nav-ico" aria-hidden="true"><?= h((string)$g['icon']) ?></span>
+                  <span class="nav-group-title"><?= h((string)$g['label']) ?></span>
+                </span>
+              </a>
+            <?php endif; ?>
 
             <!-- CLICK EN FLECHA = TOGGLE SUBMENU -->
             <?php if ($hasChildren): ?>
@@ -324,12 +355,13 @@ $supportItem = [
         </section>
       <?php endforeach; ?>
 
-      <!-- Soporte al final -->
+      <!-- Soporte al final (tooltip visual “card”) -->
       <a
         class="nav-item nav-external"
         href="<?= h($supportItem['href']) ?>"
+        data-tip-title="Soporte"
+        data-tip="<?= h($supportItem['tooltip']) ?>"
         title="<?= h($supportItem['title']) ?>"
-        data-tooltip="<?= h($supportItem['tooltip']) ?>"
         target="_blank" rel="noopener noreferrer"
       >
         🛟 <?= h($supportItem['label']) ?> <span class="nav-hint" aria-hidden="true">↗</span>

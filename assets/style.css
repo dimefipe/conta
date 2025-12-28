@@ -18,6 +18,12 @@
 
   --active-bg:#e9eefc;
   --active-border:#c7d2fe;
+
+  /* Tooltip card */
+  --tip-bg:#ffffff;
+  --tip-border: var(--border);
+  --tip-shadow: 0 18px 45px rgba(15,23,42,.14);
+  --tip-accent: rgba(99,102,241,.14);
 }
 
 *{ box-sizing:border-box; }
@@ -207,7 +213,7 @@ body{
   display:flex;
   align-items:center;
   gap:10px;
-  padding:12px 12px;
+  padding:12px 12px!important;
   text-decoration:none;
   color:var(--text);
   background:#fff;
@@ -462,29 +468,91 @@ textarea{ height:auto; padding: 10px 12px; }
 }
 .table tr:last-child td{ border-bottom:none; }
 
-/* ===== Tooltip ===== */
-.nav-item[data-tooltip]{ position: relative; }
-.nav-item[data-tooltip]::after{
+/* =========================================================
+   TOOLTIP “CARD” (más visual)
+   Compatible con:
+     - data-tooltip="..."
+     - data-tip="..."
+   ========================================================= */
+
+[data-tooltip],
+[data-tip]{
+  position: relative;
+}
+
+/* caja tooltip (card) */
+[data-tooltip]::after,
+[data-tip]::after{
   content: attr(data-tooltip);
   position: absolute;
-  left: 100%;
+  left: calc(100% + 14px);
   top: 50%;
-  transform: translate(10px, -50%);
-  background: rgba(0,0,0,.86);
-  color: #fff;
-  padding: 8px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  white-space: nowrap;
+  transform: translateY(-50%) translateX(-6px);
+
+  min-width: 220px;
+  max-width: 280px;
+
+  background: linear-gradient(180deg, var(--tip-accent), var(--tip-bg) 44px);
+  color: var(--text);
+  border: 1px solid var(--tip-border);
+  border-radius: 14px;
+  box-shadow: var(--tip-shadow);
+  padding: 12px 12px 12px 12px;
+
   opacity: 0;
   visibility: hidden;
-  transition: opacity .12s ease, transform .12s ease;
+  pointer-events: none;
+  transition: opacity .12s ease, transform .12s ease, visibility .12s ease;
   z-index: 9999;
+
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: normal;
 }
-.nav-item[data-tooltip]:hover::after{
+
+/* si usas data-tip, el contenido correcto */
+[data-tip]::after{
+  content: attr(data-tip);
+}
+
+/* flecha */
+[data-tooltip]::before,
+[data-tip]::before{
+  content: "";
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-right: 9px solid var(--tip-bg);
+  filter: drop-shadow(-1px 0 0 var(--tip-border));
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease, visibility .12s ease;
+  z-index: 10000;
+}
+
+/* hover/focus: mostrar */
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after,
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after{
   opacity: 1;
   visibility: visible;
-  transform: translate(14px, -50%);
+  transform: translateY(-50%) translateX(0);
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::before,
+[data-tip]:hover::before,
+[data-tip]:focus-visible::before{
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ===== Responsive ===== */
@@ -523,5 +591,10 @@ textarea{ height:auto; padding: 10px 12px; }
 
 /* En mobile no mostramos tooltip hover */
 @media (max-width: 900px){
-  .nav-item[data-tooltip]::after{ display:none; }
+  [data-tooltip]::after,
+  [data-tooltip]::before,
+  [data-tip]::after,
+  [data-tip]::before{
+    display:none !important;
+  }
 }
